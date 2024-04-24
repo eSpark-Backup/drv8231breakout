@@ -1,0 +1,28 @@
+Altium Designer Pick and Place Locations
+C:\Users\XPENDER\Documents\GitHub\drv8231breakout\Design Files\DRV8231-Breakout\Project Outputs for DRV8231-Breakout\Pick Place for DRV8231_Breakout_Board.txt
+
+========================================================================================================================
+File Design Information:
+
+Date:       24/04/24
+Time:       23:16
+Revision:   bdb9773d14fe1f9504d6d129ad59f022ebc1b9d2
+Variant:    No variations
+Units used: mm
+
+Designator Layer    Center-X(mm) Center-Y(mm) Rotation Ref-X(mm) Ref-Y(mm) Pad-X(mm) Pad-Y(mm) 
+C1         TopLayer 15,1892mm    9,0932mm     0        15,1892mm 9,0932mm  14,7193mm 9,0932mm  
+C2         TopLayer 21,2090mm    8,7884mm     0        21,2090mm 8,7884mm  18,1590mm 8,7884mm  
+C3         TopLayer 14,6812mm    15,1130mm    0        14,6812mm 15,1130mm 14,2113mm 15,1130mm 
+C4         TopLayer 4,2164mm     0,9144mm     0        4,2164mm  0,9144mm  3,7465mm  0,9144mm  
+J1         TopLayer 14,6812mm    18,8214mm    180      14,6812mm 18,8214mm 18,4312mm 17,0214mm 
+J2         TopLayer 29,7180mm    11,0744mm    270      29,7180mm 17,4244mm 29,7180mm 17,4244mm 
+J3         TopLayer -0,3302mm    11,0744mm    90       -0,3302mm 4,7244mm  -0,3302mm 4,7244mm  
+R1         TopLayer 11,2998mm    11,9014mm    0        11,2998mm 11,9014mm 11,0248mm 11,9014mm 
+R2         TopLayer 11,2986mm    11,0998mm    0        11,2986mm 11,0998mm 11,0236mm 11,0998mm 
+R3         TopLayer 15,4686mm    1,8288mm     0        15,4686mm 1,8288mm  12,2686mm 4,3688mm  
+R4         TopLayer 9,0424mm     2,2098mm     180      9,0424mm  2,2098mm  9,5123mm  2,2098mm  
+R5         TopLayer 8,9154mm     0,9144mm     180      8,9154mm  0,9144mm  9,1904mm  0,9144mm  
+R6         TopLayer 22,8854mm    1,7780mm     180      22,8854mm 1,7780mm  24,1554mm 1,7780mm  
+U1         TopLayer 14,7066mm    11,1164mm    0        14,7066mm 11,1164mm 13,7572mm 11,8676mm 
+U2         TopLayer 6,6396mm     1,5644mm     180      6,6396mm  1,5644mm  7,5896mm  0,9144mm  
