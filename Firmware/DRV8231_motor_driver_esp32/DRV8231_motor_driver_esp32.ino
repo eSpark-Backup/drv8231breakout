@@ -25,10 +25,13 @@ const unsigned long debounceDelay = 5;  // Adjust as needed
 Adafruit_ADS1115 ads;
 
 // Current limit in mA
-const float currentLimit = 7.0;  // 7.0 mA
+const float currentLimit = 15.0;  // Set a threshold for motor current
 
 bool motorStopped = false;  // Flag to indicate if the motor has been stopped
+bool ccwFlag = false;       // Tracks CCW rotation
+bool cwFlag = false;        // Tracks CW rotation
 
+// ISR for handling encoder signals
 void IRAM_ATTR encoderISR() {
     int stateA = digitalRead(ENCODER_A);
     int stateB = digitalRead(ENCODER_B);
@@ -44,28 +47,54 @@ void IRAM_ATTR encoderISR() {
     lastEncoderStateA = stateA;
 }
 
+// Motor control functions
+void CWDirection() {
+    if (!motorStopped) {
+        ccwFlag = false;
+        cwFlag = true;
+        digitalWrite(IN1, HIGH);  // CW direction
+        digitalWrite(IN2, LOW);
+        ledcWrite(0, motorSpeed);  // Set speed
+    }
+}
+
+void CCWDirection() {
+    if (!motorStopped) 
+    {
+        ccwFlag = true;
+        cwFlag = false;
+        digitalWrite(IN1, LOW);  // CCW direction
+        digitalWrite(IN2, HIGH);
+        ledcWrite(0, motorSpeed);  // Set speed
+    }
+}
+
+void stopMotor() {
+    digitalWrite(IN1, LOW);  // Stop motor
+    digitalWrite(IN2, LOW);
+    ledcWrite(0, 0);  // Set speed to 0
+}
+
 void motorControlTask(void *pvParameters) {
-    while (1) {
-        // Skip motor operation if it has been stopped due to current overload
-        if (motorStopped) {
+    while (1) 
+    {
+        if (motorStopped) 
+        {
+            stopMotor();  // Stop the motor if the current exceeds the limit
             vTaskDelay(1000 / portTICK_PERIOD_MS);  // Wait before checking again
             continue;
         }
 
-        // Forward motor direction with 50% speed
-        digitalWrite(IN1, HIGH);
-        digitalWrite(IN2, LOW);
-        ledcWrite(0, motorSpeed);
-
-        // Run for 5 seconds
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-
-        // Reverse motor direction
-        digitalWrite(IN1, LOW);
-        digitalWrite(IN2, HIGH);
-
-        // Run for another 5 seconds
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
+        if (cwFlag) 
+        {
+            CWDirection();  // Keep motor in CW direction
+        } 
+        else 
+        {
+            CCWDirection();  // Keep motor in CCW direction
+        }
+        
+        vTaskDelay(100 / portTICK_PERIOD_MS);  // Adjust delay for smoother control
     }
 }
 
@@ -99,21 +128,34 @@ void setup() {
     delay(1000);
 }
 
-void loop() {
+void loop() 
+{
     // Read the current sense value from ADS1115
     int16_t currentSenseValue = ads.readADC_SingleEnded(0);  // Read from A0
     float voltage = currentSenseValue * 0.1875 / 1000.0;  // Convert to voltage (0.1875mV per bit)
 
-    motorCurrent = voltage / 0.72;  // Assuming 0.72 ohm current sense resistor (R6)
+    motorCurrent = voltage / 0.72;  // Assuming 0.72 ohm current sense resistor
     motorCurrent *= 1000.0;  // Convert to mA
 
     // Check if motor current exceeds the limit
-    if (motorCurrent > currentLimit && !motorStopped) {
-        // Stop the motor by setting both IN1 and IN2 to LOW
-        digitalWrite(IN1, LOW);
-        digitalWrite(IN2, LOW);
-        motorStopped = true;  // Set the flag to prevent restarting the motor
+    if (motorCurrent > currentLimit && !motorStopped) 
+    {
+        motorStopped = true;
         Serial.println("Current limit exceeded! Motor stopped.");
+        //delay to see motor is stop
+        delay (5000);
+        // Reverse direction after stopping
+        if (cwFlag) 
+        {
+            ccwFlag = true;
+            cwFlag = false;
+        } 
+        else if (ccwFlag) 
+        {
+            cwFlag = true;
+            ccwFlag = false;
+        }
+        motorStopped = false;
     }
 
     // Print the motor current
