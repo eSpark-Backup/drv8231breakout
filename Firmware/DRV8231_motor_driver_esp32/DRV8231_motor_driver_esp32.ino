@@ -6,7 +6,7 @@ const int IN1 = 4;  // GPIO pin connected to IN1
 const int IN2 = 5;  // GPIO pin connected to IN2
 
 // PWM control for speed (optional)
-const int PWM_PIN = 25;  // PWM pin for speed control (use any PWM-capable pin)
+// const int PWM_PIN = 25;  // PWM pin for speed control (use any PWM-capable pin)
 
 // Encoder pins (connected to phase A and phase B of the encoder)
 const int ENCODER_A = 21;  // GPIO pin connected to encoder phase A
@@ -18,6 +18,7 @@ int motorSpeed = 128;  // 50% duty cycle
 volatile int encoderPosition = 0;  // To store the position of the encoder
 volatile int lastEncoderStateA = LOW;
 volatile float motorCurrent;
+volatile float motorCurrent_2;
 volatile unsigned long lastInterruptTime = 0;
 const unsigned long debounceDelay = 5;  // Adjust as needed
 
@@ -25,7 +26,8 @@ const unsigned long debounceDelay = 5;  // Adjust as needed
 Adafruit_ADS1115 ads;
 
 // Current limit in mA
-const float currentLimit = 15.0;  // Set a threshold for motor current
+const float currentLimit = 160.0;  // Set a threshold for motor current // 140 9v, 185 11V, 
+const float voltageLimit = 60.0;
 
 bool motorStopped = false;  // Flag to indicate if the motor has been stopped
 bool ccwFlag = false;       // Tracks CCW rotation
@@ -54,7 +56,7 @@ void CWDirection() {
         cwFlag = true;
         digitalWrite(IN1, HIGH);  // CW direction
         digitalWrite(IN2, LOW);
-        ledcWrite(0, motorSpeed);  // Set speed
+        //ledcWrite(0, motorSpeed);  // Set speed
     }
 }
 
@@ -65,14 +67,14 @@ void CCWDirection() {
         cwFlag = false;
         digitalWrite(IN1, LOW);  // CCW direction
         digitalWrite(IN2, HIGH);
-        ledcWrite(0, motorSpeed);  // Set speed
+        //ledcWrite(0, motorSpeed);  // Set speed
     }
 }
 
 void stopMotor() {
     digitalWrite(IN1, LOW);  // Stop motor
     digitalWrite(IN2, LOW);
-    ledcWrite(0, 0);  // Set speed to 0
+   // ledcWrite(0, 0);  // Set speed to 0
 }
 
 void motorControlTask(void *pvParameters) {
@@ -118,8 +120,8 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, FALLING);
 
     // Configure PWM frequency and resolution
-    ledcSetup(0, 1000, 8);  // Channel 0, 1 kHz frequency, 8-bit resolution
-    ledcAttachPin(PWM_PIN, 0);  // Attach PWM pin to channel 0
+   // ledcSetup(0, 50, 8);  // Channel 0, 1 kHz frequency, 8-bit resolution
+
 
     // Create a task for motor control
     xTaskCreate(motorControlTask, "Motor Control", 2048, NULL, 1, NULL);
@@ -132,14 +134,34 @@ void loop()
 {
     // Read the current sense value from ADS1115
     int16_t currentSenseValue = ads.readADC_SingleEnded(0);  // Read from A0
+    int16_t currentSenseValue_2 = ads.readADC_SingleEnded(2);  // Read from A0
     float voltage = currentSenseValue * 0.1875 / 1000.0;  // Convert to voltage (0.1875mV per bit)
+    float voltage_2 = currentSenseValue_2 * 0.1875 / 1000.0;  // Convert to voltage (0.1875mV per bit)
 
     motorCurrent = voltage / 0.72;  // Assuming 0.72 ohm current sense resistor
+    motorCurrent_2 = voltage_2 / 0.72;  // Assuming 0.72 ohm current sense resistor
     motorCurrent *= 1000.0;  // Convert to mA
+    motorCurrent_2 *= 1000.0;  // Convert to mA
+    voltage = voltage*1000.0;
+    voltage_2 = voltage_2 * 1000.0;
+    // Print the motor current
+    Serial.print("Motor ADC Voltage 1 : ");
+    Serial.print(voltage);
+    Serial.println(" mV");
+
+    Serial.print("Motor ADC Voltage 2 : ");
+    Serial.print(voltage_2);
+    Serial.println(" mV");
+    // Serial.print("Motor Current 2: ");
+    // Serial.print(motorCurrent_2);
+    // Serial.println(" mA");
 
     // Check if motor current exceeds the limit
-    if (motorCurrent > currentLimit && !motorStopped) 
+   // if (motorCurrent > currentLimit && !motorStopped)
+   //if (voltage < 95.0 && voltage > voltageLimit && !motorStopped) 
+    if (voltage > voltageLimit && !motorStopped) 
     {
+        //delay (1000);
         motorStopped = true;
         Serial.println("Current limit exceeded! Motor stopped.");
         //delay to see motor is stop
@@ -155,18 +177,19 @@ void loop()
             cwFlag = true;
             ccwFlag = false;
         }
+        delay(2000);// to limit starting current that should be less than starting torque 
         motorStopped = false;
+        if (voltage > voltageLimit && !motorStopped)
+          delay(2000);
+        //delay(1000);
     }
 
-    // Print the motor current
-    Serial.print("Motor Current: ");
-    Serial.print(motorCurrent);
-    Serial.println(" mA");
+    
 
-    // Print the encoder position
-    Serial.print("Encoder Position: ");
-    Serial.println(encoderPosition);
+    // // Print the encoder position
+    // Serial.print("Encoder Position: ");
+    // Serial.println(encoderPosition);
 
     // Wait for 500ms before the next reading
-    delay(500);
+   // delay(500);
 }
