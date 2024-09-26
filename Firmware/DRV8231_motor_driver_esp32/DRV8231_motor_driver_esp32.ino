@@ -1,172 +1,114 @@
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
 
-// Motor control pins (connected to IN1 and IN2 on DRV8231A)
-const int IN1 = 4;  // GPIO pin connected to IN1
-const int IN2 = 5;  // GPIO pin connected to IN2
+const int IN1 = 4;  // Motor control pins (connected to IN1 and IN2 on DRV8231A)
+const int IN2 = 5;  
 
-// PWM control for speed (optional)
-// const int PWM_PIN = 25;  // PWM pin for speed control (use any PWM-capable pin)
+const int ENCODER_A = 21;  //  encoder phase A
+const int ENCODER_B = 22;  // encoder phase B
 
-// Encoder pins (connected to phase A and phase B of the encoder)
-const int ENCODER_A = 21;  // GPIO pin connected to encoder phase A
-const int ENCODER_B = 22;  // GPIO pin connected to encoder phase B
+// Motor control flags
+volatile bool motorStopped = false;
+volatile bool ccwFlag = false;
+volatile bool cwFlag = false;
 
-// Motor speed (0 to 255 for PWM control)
-int motorSpeed = 128;  // 50% duty cycle
-
-volatile int encoderPosition = 0;  // To store the position of the encoder
+// Encoder variables
+volatile int encoderPosition = 0; 
 volatile int lastEncoderStateA = LOW;
-volatile float motorCurrent;
-volatile float motorCurrent_2;
-volatile unsigned long lastInterruptTime = 0;
-const unsigned long debounceDelay = 5;  // Adjust as needed
 
-// Create an ADS1115 object
+const unsigned long debounceDelay = 5;  // Debounce delay for interrupts (in milliseconds)
+volatile unsigned long lastInterruptTime = 0;
+
+
+const float voltageLimit = 35.0;  // Rsense voltage limit in mV for motor control
+
 Adafruit_ADS1115 ads;
 
-// Current limit in mA
-const float currentLimit = 160.0;  // Set a threshold for motor current // 140 9v, 185 11V, 
-const float voltageLimit = 60.0;
 
-bool motorStopped = false;  // Flag to indicate if the motor has been stopped
-bool ccwFlag = false;       // Tracks CCW rotation
-bool cwFlag = false;        // Tracks CW rotation
-
-// ISR for handling encoder signals
-void IRAM_ATTR encoderISR() {
+void IRAM_ATTR encoderISR() // ISR for handling encoder signals
+{
     int stateA = digitalRead(ENCODER_A);
     int stateB = digitalRead(ENCODER_B);
 
-    if (stateA != lastEncoderStateA) {
-        if (stateB != stateA) {
-            encoderPosition++;
-        } else {
-            encoderPosition--;
+    // Check for encoder direction
+    if (stateA != lastEncoderStateA) 
+    {
+        if (stateB != stateA) 
+        {
+            encoderPosition++;  // CW direction
+        } else 
+        {
+            encoderPosition--;  // CCW direction
         }
     }
-
-    lastEncoderStateA = stateA;
+    lastEncoderStateA = stateA;  // Update last state
 }
 
-// Motor control functions
-void CWDirection() {
-    if (!motorStopped) {
+// Function to control the motor in CW direction
+void CWDirection() 
+{
+    if (!motorStopped) 
+    {
         ccwFlag = false;
         cwFlag = true;
-        digitalWrite(IN1, HIGH);  // CW direction
-        digitalWrite(IN2, LOW);
-        //ledcWrite(0, motorSpeed);  // Set speed
+        digitalWrite(IN1, HIGH);  // Set IN1 high for CW rotation
+        digitalWrite(IN2, LOW);   // Set IN2 low
     }
 }
 
-void CCWDirection() {
+// Function to control the motor in CCW direction
+void CCWDirection() 
+{
     if (!motorStopped) 
     {
         ccwFlag = true;
         cwFlag = false;
-        digitalWrite(IN1, LOW);  // CCW direction
-        digitalWrite(IN2, HIGH);
-        //ledcWrite(0, motorSpeed);  // Set speed
+        digitalWrite(IN1, LOW);   // Set IN1 low for CCW rotation
+        digitalWrite(IN2, HIGH);  // Set IN2 high
     }
 }
 
-void stopMotor() {
-    digitalWrite(IN1, LOW);  // Stop motor
+// Function to stop the motor
+void stopMotor() 
+{
+    digitalWrite(IN1, LOW);  // Set both IN1 and IN2 low to stop motor
     digitalWrite(IN2, LOW);
-   // ledcWrite(0, 0);  // Set speed to 0
 }
 
-void motorControlTask(void *pvParameters) {
+// Task to control the motor based on direction flags
+void motorControlTask(void *pvParameters) 
+{
     while (1) 
     {
         if (motorStopped) 
         {
-            stopMotor();  // Stop the motor if the current exceeds the limit
-            vTaskDelay(1000 / portTICK_PERIOD_MS);  // Wait before checking again
-            continue;
-        }
-
-        if (cwFlag) 
+            stopMotor();  // Stop motor if stopped flag is set
+        } 
+        else if (cwFlag) 
         {
-            CWDirection();  // Keep motor in CW direction
+            CWDirection();  // Rotate CW if cwFlag is set
         } 
         else 
         {
-            CCWDirection();  // Keep motor in CCW direction
+            CCWDirection();  // Rotate CCW if ccwFlag is set
         }
-        
-        vTaskDelay(100 / portTICK_PERIOD_MS);  // Adjust delay for smoother control
+
+        // Small delay to allow smoother motor control
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
-void setup() {
-    // Initialize serial communication for debugging
-    Serial.begin(115200);
-
-    // Initialize the ADS1115
-    ads.setGain(GAIN_TWOTHIRDS);  // Adjust gain as needed
-    ads.begin();
-
-    // Set up motor control pins
-    pinMode(IN1, OUTPUT);
-    pinMode(IN2, OUTPUT);
-
-    // Set up encoder pins
-    pinMode(ENCODER_A, INPUT_PULLUP);
-    pinMode(ENCODER_B, INPUT_PULLUP);
-
-    // Attach interrupts to the encoder
-    attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, FALLING);
-
-    // Configure PWM frequency and resolution
-   // ledcSetup(0, 50, 8);  // Channel 0, 1 kHz frequency, 8-bit resolution
-
-
-    // Create a task for motor control
-    xTaskCreate(motorControlTask, "Motor Control", 2048, NULL, 1, NULL);
-
-    // Wait for setup to complete
-    delay(1000);
-}
-
-void loop() 
+// Function to handle overcurrent detection and motor reversal
+void handleMotorOperation(float voltage1, float voltage2) 
 {
-    // Read the current sense value from ADS1115
-    int16_t currentSenseValue = ads.readADC_SingleEnded(0);  // Read from A0
-    int16_t currentSenseValue_2 = ads.readADC_SingleEnded(2);  // Read from A0
-    float voltage = currentSenseValue * 0.1875 / 1000.0;  // Convert to voltage (0.1875mV per bit)
-    float voltage_2 = currentSenseValue_2 * 0.1875 / 1000.0;  // Convert to voltage (0.1875mV per bit)
-
-    motorCurrent = voltage / 0.72;  // Assuming 0.72 ohm current sense resistor
-    motorCurrent_2 = voltage_2 / 0.72;  // Assuming 0.72 ohm current sense resistor
-    motorCurrent *= 1000.0;  // Convert to mA
-    motorCurrent_2 *= 1000.0;  // Convert to mA
-    voltage = voltage*1000.0;
-    voltage_2 = voltage_2 * 1000.0;
-    // Print the motor current
-    Serial.print("Motor ADC Voltage 1 : ");
-    Serial.print(voltage);
-    Serial.println(" mV");
-
-    Serial.print("Motor ADC Voltage 2 : ");
-    Serial.print(voltage_2);
-    Serial.println(" mV");
-    // Serial.print("Motor Current 2: ");
-    // Serial.print(motorCurrent_2);
-    // Serial.println(" mA");
-
-    // Check if motor current exceeds the limit
-   // if (motorCurrent > currentLimit && !motorStopped)
-   //if (voltage < 95.0 && voltage > voltageLimit && !motorStopped) 
-    if (voltage > voltageLimit && !motorStopped) 
+    if ((voltage1 > voltageLimit || voltage2 > voltageLimit) && !motorStopped) 
     {
-        //delay (1000);
         motorStopped = true;
         Serial.println("Current limit exceeded! Motor stopped.");
-        //delay to see motor is stop
-        delay (5000);
-        // Reverse direction after stopping
+
+        delay(5000);  // Pause to let motor stop completely
+
+        // Reverse motor direction after stop
         if (cwFlag) 
         {
             ccwFlag = true;
@@ -177,19 +119,49 @@ void loop()
             cwFlag = true;
             ccwFlag = false;
         }
-        delay(2000);// to limit starting current that should be less than starting torque 
+
+        delay(2000);  // Delay before restarting in opposite direction
         motorStopped = false;
-        if (voltage > voltageLimit && !motorStopped)
-          delay(2000);
-        //delay(1000);
     }
+}
+
+// Setup function
+void setup() 
+{
+    Serial.begin(115200);  
+    // Initialize the ADS1115 ADC
+    ads.setGain(GAIN_TWOTHIRDS);  // Adjust gain as needed
+    ads.begin();
+
+    pinMode(IN1, OUTPUT);
+    pinMode(IN2, OUTPUT);
+
+    pinMode(ENCODER_A, INPUT_PULLUP);
+    pinMode(ENCODER_B, INPUT_PULLUP);
+
+    attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, FALLING);
+    xTaskCreate(motorControlTask, "Motor Control", 2048, NULL, 1, NULL);
+    delay(1000);  
+}
+
+// Main loop function
+void loop() 
+{
+    int16_t currentSenseValue1 = ads.readADC_SingleEnded(0);  // Read from A0
+    int16_t currentSenseValue2 = ads.readADC_SingleEnded(2);  // Read from A2
 
     
+    float voltage1 = currentSenseValue1 * 0.1875;  // 0.1875mV per bit
+    float voltage2 = currentSenseValue2 * 0.1875; // Convert ADC readings to voltage (mV)
 
-    // // Print the encoder position
-    // Serial.print("Encoder Position: ");
-    // Serial.println(encoderPosition);
+    Serial.print("Motor ADC Voltage 1: ");
+    Serial.print(voltage1);
+    Serial.println(" mV");
 
-    // Wait for 500ms before the next reading
-   // delay(500);
+    Serial.print("Motor ADC Voltage 2: ");
+    Serial.print(voltage2);
+    Serial.println(" mV");
+
+    // Handle motor stop and direction reversal if current exceeds the limit
+    handleMotorOperation(voltage1, voltage2);
 }
